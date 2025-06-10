@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Form Downtime</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      padding: 2em;
+      background: #f1f5f9;
+    }
+    .form-container {
+      background: #ffffff;
+      padding: 2em;
+      max-width: 720px;
+      margin: auto;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(100, 116, 139, 0.2);
+      border: 1px solid #e2e8f0;
+    }
+    h2 {
+      color: #334155;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      margin-top: 1em;
+      font-weight: 600;
+      color: #334155;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      margin-top: 0.5em;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      box-sizing: border-box;
+      font-size: 1rem;
+      height: 42px;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+    textarea#keterangan {
+      height: 120px;
+      resize: vertical;
+    }
+    button {
+      margin-top: 1.5em;
+      padding: 12px;
+      background-color: #10b981;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 1rem;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #059669;
+    }
+    .downtime-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 1em;
+    }
+    .downtime-row .choices,
+    .choices {
+      flex: 2;
+    }
+    .downtime-row input[type="number"] {
+      flex: 1;
+      height: 42px;
+    }
+    .choices__inner {
+      padding: 10px !important;
+      min-height: 42px !important;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      font-size: 1rem;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      background: #f8fafc;
+    }
+    .choices__list--single {
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    .choices[data-type*=select-one] .choices__inner {
+      height: 42px;
+    }
+  </style>
+</head>
+<body>
+  <div class="form-container">
+    <h2>📋 Input Downtime</h2>
+    <form id="downtimeForm">
+      <label for="datetime">Tanggal & Waktu (WIB)</label>
+      <input type="text" id="datetime" name="datetime" readonly />
+      <label for="createdBy">Created By</label>
+      <input type="text" id="createdBy" name="createdBy" readonly />
+      <label for="lokasi">Lokasi</label>
+      <select id="lokasi" name="lokasi"></select>
+      <label for="opr">Operator Terdampak</label>
+      <input type="number" id="opr" name="opr" placeholder="Masukkan jumlah operator" />
+      <label>Jenis Downtime & Waktu</label>
+      <div class="downtime-row">
+        <select id="jenis1" name="jenis1"></select>
+        <input type="number" name="waktu1" placeholder="Waktu (menit)" />
+      </div>
+      <div class="downtime-row">
+        <select id="jenis2" name="jenis2"></select>
+        <input type="number" name="waktu2" placeholder="Waktu (menit)" />
+      </div>
+      <div class="downtime-row">
+        <select id="jenis3" name="jenis3"></select>
+        <input type="number" name="waktu3" placeholder="Waktu (menit)" />
+      </div>
+      <label for="keterangan">Keterangan</label>
+      <textarea id="keterangan" name="keterangan" placeholder="Catatan tambahan..."></textarea>
+      <button type="submit">Submit</button>
+    
+      <div id="progressBar" style="display:none; margin-top: 1em;">
+        <div style="background-color: #e5e7eb; height: 10px; border-radius: 4px;">
+          <div id="progressFill" style="width: 0%; height: 10px; background-color: #10b981; border-radius: 4px; transition: width 0.5s;"></div>
+        </div>
+        <small>Sedang mengirim data...</small>
+      </div>
+    </form>
+  </div>
+  <script>
+    function updateDateTime() {
+      const now = new Date();
+      now.setHours(now.getHours() + 7);
+      const formatted = now.toISOString().slice(0,16).replace('T', ' ');
+      document.getElementById('datetime').value = formatted;
+    }
+    function fillUser() {
+      const user = localStorage.getItem("loggedInUser") || "";
+      document.getElementById("createdBy").value = user;
+    }
+    let lokasiChoices, jenis1Choices, jenis2Choices, jenis3Choices;
+    function initializeChoices() {
+      lokasiChoices = new Choices('#lokasi', { searchEnabled: true, itemSelectText: '' });
+      jenis1Choices = new Choices('#jenis1', { searchEnabled: true, itemSelectText: '' });
+      jenis2Choices = new Choices('#jenis2', { searchEnabled: true, itemSelectText: '' });
+      jenis3Choices = new Choices('#jenis3', { searchEnabled: true, itemSelectText: '' });
+    }
+    function updateChoices(choicesInstance, data, fieldName) {
+      const items = data.map(item => ({
+        value: item[fieldName],
+        label: item[fieldName]
+      }));
+      choicesInstance.setChoices(items, 'value', 'label', true);
+    }
+    window.onload = function() {
+      updateDateTime();
+      fillUser();
+      initializeChoices();
+      fetch("https://opensheet.elk.sh/1GhjDLcQk9UjE2fTO2BrmsuNgkMduAXcvALVHuCdzo5Y/lokasi")
+        .then(res => res.json())
+        .then(data => updateChoices(lokasiChoices, data, "lokasi"));
+      fetch("https://opensheet.elk.sh/1GhjDLcQk9UjE2fTO2BrmsuNgkMduAXcvALVHuCdzo5Y/JENIS")
+        .then(res => res.json())
+        .then(data => {
+          updateChoices(jenis1Choices, data, "JENIS");
+          updateChoices(jenis2Choices, data, "JENIS");
+          updateChoices(jenis3Choices, data, "JENIS");
+        });
+    };
+    const form = document.getElementById('downtimeForm');
+    form.addEventListener('submit', function(e) {
+      document.getElementById("progressBar").style.display = "block";
+      document.getElementById("progressFill").style.width = "50%";
+      e.preventDefault();
+      const data = {
+        datetime: document.getElementById('datetime').value,
+        createdBy: document.getElementById('createdBy').value,
+        lokasi: lokasiChoices.getValue(true),
+        opr: document.getElementById('opr').value.trim(),
+        jenis1: jenis1Choices.getValue(true),
+        waktu1: form.waktu1.value,
+        jenis2: jenis2Choices.getValue(true),
+        waktu2: form.waktu2.value,
+        jenis3: jenis3Choices.getValue(true),
+        waktu3: form.waktu3.value,
+        keterangan: form.keterangan.value.trim()
+      };
+      if (!data.lokasi || !data.opr || !data.jenis1 || !data.keterangan) {
+        alert("⚠️ Harap lengkapi semua kolom wajib: Lokasi, Operator Terdampak, Jenis Downtime 1, dan Keterangan.");
+        return;
+      }
+      fetch("https://script.google.com/macros/s/AKfycbwpWwX7H-qFzdn_hwhohg8zP-bvUpKwZKPIdwDqxdbWBefXLk8oObHJEECze99EqpnheA/exec", {
+  method: "POST",
+  mode: "no-cors",
+  body: JSON.stringify(data)
+})
+.then(() => {
+  document.getElementById("progressFill").style.width = "100%";
+  setTimeout(() => {
+    document.getElementById("progressBar").style.display = "none";
+    document.getElementById("progressFill").style.width = "0%";
+  }, 500);
+  alert("✅ Data berhasil dikirim!");
+  // reset form (kecuali Created By)
+  Array.from(form.elements).forEach(el => {
+    if (el.name !== 'createdBy') el.value = "";
+  });
+})
+.catch(err => {
+  console.error("Error:", err);
+  alert("❌ Gagal mengirim data.");
+});
+    });
+  </script>
+</body>
+</html>
