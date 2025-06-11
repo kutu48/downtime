@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laporan Change Over</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f1f5f9;
+      color: #334155;
+      padding: 5vw;
+    }
+    h1 {
+      text-align: center;
+      font-size: 2rem;
+    }
+    .filters {
+      margin-bottom: 1rem;
+    }
+    .filters label {
+      margin-right: 10px;
+    }
+    .filters button {
+      padding: 6px 12px;
+      background-color: #22c55e;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #e2e8f0;
+    }
+    .summary {
+      margin-bottom: 10px;
+      background: #e2e8f0;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .download-btn {
+      margin-top: 10px;
+      background-color: #2563eb;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 999;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-close {
+      float: right;
+      cursor: pointer;
+      font-weight: bold;
+      color: #ef4444;
+    }
+.modal img {
+  max-width: 100%;
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  cursor: zoom-in;
+  transition: transform 0.2s;
+  display: block;
+}
+.modal img.zoomed {
+  transform: scale(2);
+  cursor: zoom-out;
+}
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 10px;
+}
+.pagination button {
+  padding: 5px 10px;
+  background-color: #22c55e;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.total-info {
+  text-align: center;
+  margin-top: 10px;
+  font-weight: bold;
+}
+  </style>
+</head>
+<body>
+  <h1>Dashboard Laporan Change Over</h1>
+
+  <div class="filters">
+    <label>Start Date: <input type="date" id="startDate"></label>
+    <label>End Date: <input type="date" id="endDate"></label>
+    <button onclick="filterAndRender()">Apply</button>
+    <label>Show: 
+      <select id="pageSize">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="all">All</option>
+      </select>
+    </label>
+    <button class="download-btn" onclick="exportToExcel()">Export to Excel</button>
+  </div>
+
+  <div class="summary" id="summaryBox"></div>
+
+  <table id="laporanTable">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Created By</th>
+        <th>Line</th>
+        <th>Buyer</th>
+        <th>Style</th>
+        <th>COT</th>
+        <th>COPT</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="modal" id="detailModal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeModal()">&times;</span>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script>
+    let globalFilteredData = [];
+
+    function calculateWorkingTime(startStr, endStr) {
+      const start = new Date(startStr);
+      const end = new Date(endStr);
+      const workStartHour = 7;
+      const workEndHour = 16;
+
+      let minutes = 0;
+      let current = new Date(start);
+
+      while (current < end) {
+        const hour = current.getHours();
+        if (hour >= workStartHour && hour < workEndHour) {
+          minutes++;
+        }
+        current.setMinutes(current.getMinutes() + 1);
+      }
+
+      return minutes;
+    }
+
+    function formatDuration(minutes) {
+      const hrs = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hrs} Jam ${mins} menit`;
+    }
+
+    function closeModal() {
+      document.getElementById("detailModal").style.display = "none";
+    }
+
+ let currentPage = 1;
+let rowsPerPage = 10;
+let paginatedData = [];
+
+function paginateData(data, pageSize) {
+  const pages = [];
+  for (let i = 0; i < data.length; i += pageSize) {
+    pages.push(data.slice(i, i + pageSize));
+  }
+  return pages;
+}
+
+function updatePaginationControls(totalPages) {
+  const container = document.getElementById("paginationControls") || document.createElement("div");
+  container.id = "paginationControls";
+  container.className = "pagination";
+  container.innerHTML = "";
+
+  for (let i = 1; i <= totalPages; i++) {
+    const btn = document.createElement("button");
+    btn.textContent = i;
+    btn.onclick = () => {
+      currentPage = i;
+      renderCurrentPage();
+    };
+    container.appendChild(btn);
+  }
+
+  if (!document.getElementById("paginationControls")) {
+    document.body.appendChild(container);
+  }
+}
+
+function renderCurrentPage() {
+  const tableBody = document.querySelector("#laporanTable tbody");
+  const rows = paginatedData[currentPage - 1] || [];
+  tableBody.innerHTML = "";
+
+  let totalCOT = 0;
+  let totalCOPT = 0;
+
+  rows.forEach(row => {
+    const cot = calculateWorkingTime(row["Finish Lama"], row["Output Baru"]);
+    const copt = calculateWorkingTime(row["Start Baru"], row["Output Baru"]);
+    totalCOT += cot;
+    totalCOPT += copt;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${row["Timestamp "] || "-"}</td>
+      <td>${row["Created By"] || "-"}</td>
+      <td>${row["Line "] || "-"}</td>
+      <td>${row["Buyer "] || "-"}</td>
+      <td>${row["Style "] || "-"}</td>
+      <td>${formatDuration(cot)}</td>
+      <td>${formatDuration(copt)}</td>
+      <td><button onclick='showDetails(${JSON.stringify(row)})'>Details</button></td>
+    `;
+    tableBody.appendChild(tr);
+  });
+
+  let info = document.getElementById("totalCOTCOPT");
+  if (!info) {
+    info = document.createElement("div");
+    info.id = "totalCOTCOPT";
+    info.className = "total-info";
+    document.body.appendChild(info);
+  }
+  info.innerHTML = `Total COT: ${formatDuration(totalCOT)} | Total COPT: ${formatDuration(totalCOPT)}`;
+}
+
+function showDetails(row) {
+  const modal = document.getElementById("detailModal");
+  const modalBody = document.getElementById("modalBody");
+  let imgTag = "";
+
+  if (row["Foto URL"] && row["Foto URL"].includes("drive.google.com")) {
+    const match = row["Foto URL"].match(/[-\w]{25,}/);
+    if (match) {
+      const id = match[0];
+      const directLink = `https://drive.google.com/uc?id=${id}`;
+      const downloadLink = `https://drive.google.com/uc?export=download&id=${id}`;
+      imgTag = `
+        <img id='fotoLampiran' src='${directLink}' onclick='this.classList.toggle("zoomed")'>
+        <br/><a href='${downloadLink}' target='_blank'>Download Foto</a>
+        <br/><a href='${row["Foto URL"]}' target='_blank'>Lihat URL Asli</a>
+      `;
+    } else {
+      imgTag = `<a href='${row["Foto URL"]}' target='_blank'>Lihat URL Asli</a>`;
+    }
+  }
+
+  modalBody.innerHTML = `
+    <strong>Timestamp:</strong> ${row["Timestamp "] || "-"}<br/>
+    <strong>Datetime:</strong> ${row["Datetime "] || "-"}<br/>
+    <strong>Created By:</strong> ${row["Created By"] || "-"}<br/>
+    <strong>Line:</strong> ${row["Line "] || "-"}<br/>
+    <strong>Buyer:</strong> ${row["Buyer "] || "-"}<br/>
+    <strong>Style:</strong> ${row["Style "] || "-"}<br/>
+    <strong>Start Baru:</strong> ${row["Start Baru"] || "-"}<br/>
+    <strong>Output Baru:</strong> ${row["Output Baru"] || "-"}<br/>
+    <strong>Finish Lama:</strong> ${row["Finish Lama"] || "-"}<br/>
+    <strong>Keterangan:</strong> ${row["Keterangan "] || "-"}<br/>
+    <strong>Foto Lampiran:</strong><br/>${imgTag}
+  `;
+
+  modal.style.display = "flex";
+}
+    function exportToExcel() {
+      const rows = globalFilteredData.map(row => ({
+        "Timestamp": row["Timestamp "],
+        "Datetime": row["Datetime "],
+        "Created By": row["Created By"],
+        "Line": row["Line "],
+        "Buyer": row["Buyer "],
+        "Style": row["Style "],
+        "Start Baru": row["Start Baru"],
+        "Output Baru": row["Output Baru"],
+        "Finish Lama": row["Finish Lama"],
+        "Keterangan": row["Keterangan "],
+        "Foto URL": row["Foto URL"]
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Change Over");
+      XLSX.writeFile(workbook, "laporan_changeover.xlsx");
+    }
+
+    let allData = [];
+
+    function renderTable(filteredData) {
+      globalFilteredData = filteredData;
+      const tbody = document.querySelector("#laporanTable tbody");
+      const summaryBox = document.getElementById("summaryBox");
+      const pageSize = document.getElementById("pageSize").value;
+
+      tbody.innerHTML = "";
+      const sliceSize = pageSize === 'all' ? filteredData.length : parseInt(pageSize);
+      let totalMinutes = 0;
+      let uniqueStyles = new Set();
+
+      filteredData.slice(0, sliceSize).forEach(row => {
+        const cotMins = calculateWorkingTime(row["Finish Lama"], row["Output Baru"]);
+        const coptMins = calculateWorkingTime(row["Start Baru"], row["Output Baru"]);
+        totalMinutes += cotMins;
+        uniqueStyles.add(row["Style "]);
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row["Timestamp "] || "-"}</td>
+          <td>${row["Created By"] || "-"}</td>
+          <td>${row["Line "] || "-"}</td>
+          <td>${row["Buyer "] || "-"}</td>
+          <td>${row["Style "] || "-"}</td>
+          <td>${formatDuration(cotMins)}</td>
+          <td>${formatDuration(coptMins)}</td>
+          <td><button onclick='showDetails(${JSON.stringify(row)})'>Details</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const totalCO = filteredData.length;
+      const totalStyle = uniqueStyles.size;
+      const targetCO = totalCO * 60;
+      const avgMinutes = totalCO ? Math.round(totalMinutes / totalCO) : 0;
+      summaryBox.innerHTML = `
+        <strong>Total ChangeOver:</strong> ${totalCO} | 
+        <strong>Total Style:</strong> ${totalStyle} | 
+        <strong>Target CO:</strong> ${targetCO} menit | 
+        <strong>Average CO per Style:</strong> ${formatDuration(avgMinutes)}`;
+    }
+
+    function filterAndRender() {
+      const startInput = document.getElementById("startDate");
+      const endInput = document.getElementById("endDate");
+      const start = new Date(startInput.value);
+      const end = new Date(endInput.value);
+
+      const filtered = allData.filter(row => {
+        const ts = new Date(row["Timestamp "]);
+        return (!startInput.value || ts >= start) && (!endInput.value || ts <= end);
+      });
+
+      renderTable(filtered);
+    }
+
+    fetch("https://opensheet.elk.sh/1ggluhGNgO1lYjnLX2f0AfD8n6GNZX5O-FBd2EWQshoA/data")
+      .then(res => res.json())
+      .then(data => {
+        allData = data;
+        filterAndRender();
+        document.getElementById("pageSize").addEventListener("change", filterAndRender);
+      });
+  </script>
+</body>
+</html>
